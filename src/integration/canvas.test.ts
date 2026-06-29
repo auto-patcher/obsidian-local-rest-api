@@ -1,250 +1,418 @@
-import { describe, it, expect, beforeEach, afterEach } from "@jest/globals";
-import { App, Vault } from "obsidian";
-import { CANVAS_TEST_PATH, CANVAS_FIXTURE_DATA, TEST_DIR } from "./fixtures";
-import RequestHandler from "../requestHandler";
+import { request } from './client';
+import { TEST_DIR } from './fixtures';
 
-describe("Canvas Operations", () => {
-  let app: App;
-  let requestHandler: RequestHandler;
-  let vault: Vault;
+const TEST_CANVAS_PATH = `${TEST_DIR}/test-canvas.canvas`;
+const TEST_CANVAS_DIR = TEST_DIR;
 
-  beforeEach(async () => {
-    // Note: Integration tests require a live Obsidian instance
-    // This is a placeholder for actual integration testing
-    if (!app) {
-      console.log("Skipping canvas integration tests (Obsidian not available)");
-      return;
-    }
-    vault = app.vault;
-
-    // Create test directory
-    const testDir = vault.getAbstractFileByPath(TEST_DIR);
-    if (!testDir) {
-      await vault.createFolder(TEST_DIR);
-    }
-  });
-
-  afterEach(async () => {
-    if (!app) return;
-    // Clean up test canvas files
-    try {
-      const file = vault.getAbstractFileByPath(CANVAS_TEST_PATH);
-      if (file) {
-        await vault.delete(file);
-      }
-    } catch (e) {
-      // Ignore cleanup errors
-    }
-  });
-
-  describe("Canvas Stats", () => {
-    it("should calculate stats for a canvas with nodes and edges", async () => {
-      if (!app) return;
-
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
-
-      const stats = await requestHandler.operations.getCanvasStats(CANVAS_TEST_PATH);
-
-      // Verify node count
-      expect(stats.nodeCount).toBe(4);
-
-      // Verify node counts by type
-      expect(stats.nodeCountByType).toEqual({
-        text: 1,
-        file: 1,
-        link: 1,
-        group: 1,
+describe('Canvas Operations', () => {
+  // Branch 1: Canvas File Operations
+  describe('Canvas File Operations', () => {
+    it('should create a new canvas file', async () => {
+      const response = await request('PUT', `canvas/${TEST_CANVAS_PATH}`, {
+        nodes: [],
+        edges: [],
       });
 
-      // Verify edge count
-      expect(stats.edgeCount).toBe(2);
-
-      // Verify bounding box
-      expect(stats.boundingBox).toBeDefined();
-      expect(stats.boundingBox.minX).toBe(0);
-      expect(stats.boundingBox.minY).toBe(0);
-      expect(stats.boundingBox.maxX).toBe(650); // rightmost node ends at 50 + 600
-      expect(stats.boundingBox.maxY).toBe(500); // bottom-most node ends at 200 + 300
-      expect(stats.boundingBox.width).toBe(650);
-      expect(stats.boundingBox.height).toBe(500);
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.nodes).toBeDefined();
+      expect(response.json?.edges).toBeDefined();
     });
 
-    it("should handle empty canvas", async () => {
-      if (!app) return;
+    it('should read a canvas file', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}`);
 
-      const emptyCanvas = { nodes: [], edges: [] };
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(emptyCanvas));
-
-      const stats = await requestHandler.operations.getCanvasStats(CANVAS_TEST_PATH);
-
-      expect(stats.nodeCount).toBe(0);
-      expect(stats.edgeCount).toBe(0);
-      expect(stats.nodeCountByType).toEqual({});
-      expect(stats.boundingBox.minX).toBe(0);
-      expect(stats.boundingBox.minY).toBe(0);
-      expect(stats.boundingBox.maxX).toBe(0);
-      expect(stats.boundingBox.maxY).toBe(0);
-      expect(stats.boundingBox.width).toBe(0);
-      expect(stats.boundingBox.height).toBe(0);
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.nodes).toBeDefined();
+      expect(response.json?.edges).toBeDefined();
     });
 
-    it("should throw for non-existent canvas file", async () => {
-      if (!app) return;
+    it('should list canvas files in a directory', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_DIR}`);
 
-      await expect(
-        requestHandler.operations.getCanvasStats("nonexistent.canvas"),
-      ).rejects.toThrow();
+      expect(response.statusCode).toBe(200);
+      expect(Array.isArray(response.json?.files)).toBe(true);
+      expect(response.json?.files?.some((f: string) => f.includes('.canvas'))).toBe(true);
+    });
+
+    it('should delete a canvas file', async () => {
+      const tempPath = `${TEST_DIR}/temp-canvas.canvas`;
+
+      // Create first
+      await request('PUT', `canvas/${tempPath}`, {
+        nodes: [],
+        edges: [],
+      });
+
+      // Delete
+      const response = await request('DELETE', `canvas/${tempPath}`);
+      expect(response.statusCode).toBe(204);
+    });
+
+    it('should search canvas files', async () => {
+      const response = await request('POST', 'canvas/search/', {
+        query: 'canvas',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(Array.isArray(response.json?.results)).toBe(true);
     });
   });
 
-  describe("Canvas Edges", () => {
-    it("should list all edges in a canvas", async () => {
-      if (!app) return;
+  // Branch 2: Canvas Metadata Operations
+  describe('Canvas Metadata Operations', () => {
+    it('should get canvas stats', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/stats`);
 
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.nodeCount).toBeDefined();
+      expect(response.json?.nodeCountByType).toBeDefined();
+      expect(response.json?.edgeCount).toBeDefined();
+      expect(response.json?.boundingBox).toBeDefined();
+    });
+  });
 
-      const edges = await requestHandler.operations.getCanvasEdges(CANVAS_TEST_PATH);
+  // Branch 3: Canvas Node Operations
+  describe('Canvas Node Operations', () => {
+    it('should list nodes in a canvas', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/nodes`);
 
-      expect(edges).toHaveLength(2);
-      expect(edges[0].id).toBe("edge-1");
-      expect(edges[0].fromNode).toBe("node-text-1");
-      expect(edges[0].toNode).toBe("node-file-1");
-      expect(edges[0].label).toBe("Test Edge 1");
-      expect(edges[1].id).toBe("edge-2");
+      expect(response.statusCode).toBe(200);
+      expect(Array.isArray(response.json?.nodes)).toBe(true);
     });
 
-    it("should get a single edge by ID", async () => {
-      if (!app) return;
+    it('should filter nodes by type', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/nodes?type=text`);
 
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
-
-      const edge = await requestHandler.operations.getCanvasEdge(CANVAS_TEST_PATH, "edge-1");
-
-      expect(edge).toBeDefined();
-      expect(edge.id).toBe("edge-1");
-      expect(edge.fromNode).toBe("node-text-1");
-      expect(edge.toNode).toBe("node-file-1");
-      expect(edge.fromSide).toBe("right");
-      expect(edge.toSide).toBe("left");
-      expect(edge.toEnd).toBe("arrow");
-      expect(edge.color).toBe("#0000FF");
-      expect(edge.label).toBe("Test Edge 1");
+      expect(response.statusCode).toBe(200);
+      expect(Array.isArray(response.json?.nodes)).toBe(true);
     });
 
-    it("should throw when getting non-existent edge", async () => {
-      if (!app) return;
-
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
-
-      await expect(
-        requestHandler.operations.getCanvasEdge(CANVAS_TEST_PATH, "nonexistent-edge"),
-      ).rejects.toThrow();
-    });
-
-    it("should create a new edge between nodes", async () => {
-      if (!app) return;
-
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
-
-      const newEdge = await requestHandler.operations.addCanvasEdge(CANVAS_TEST_PATH, {
-        fromNode: "node-link-1",
-        toNode: "node-text-1",
-        fromSide: "top" as const,
-        toSide: "bottom" as const,
-        color: "#FF00FF",
-        label: "New Edge",
+    it('should create a new node', async () => {
+      const response = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 100,
+        text: 'Test Node',
       });
 
-      expect(newEdge).toBeDefined();
-      expect(newEdge.id).toBeDefined();
-      expect(newEdge.fromNode).toBe("node-link-1");
-      expect(newEdge.toNode).toBe("node-text-1");
-      expect(newEdge.fromSide).toBe("top");
-      expect(newEdge.toSide).toBe("bottom");
-      expect(newEdge.color).toBe("#FF00FF");
-      expect(newEdge.label).toBe("New Edge");
-
-      // Verify edge was persisted
-      const edges = await requestHandler.operations.getCanvasEdges(CANVAS_TEST_PATH);
-      expect(edges).toHaveLength(3);
+      expect(response.statusCode).toBe(201);
+      expect(response.json?.id).toBeDefined();
+      expect(response.json?.type).toBe('text');
     });
 
-    it("should throw when creating edge with non-existent node", async () => {
-      if (!app) return;
+    it('should get a specific node', async () => {
+      // Create a node first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 100,
+        text: 'Test Node',
+      });
 
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
+      const nodeId = createResponse.json?.id;
 
-      await expect(
-        requestHandler.operations.addCanvasEdge(CANVAS_TEST_PATH, {
-          fromNode: "nonexistent-node",
-          toNode: "node-text-1",
-        }),
-      ).rejects.toThrow();
+      // Get the node
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/nodes/${nodeId}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.id).toBe(nodeId);
     });
 
-    it("should update edge properties", async () => {
-      if (!app) return;
+    it('should update a node', async () => {
+      // Create a node first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 100,
+        text: 'Test Node',
+      });
 
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
+      const nodeId = createResponse.json?.id;
 
-      const updatedEdge = await requestHandler.operations.updateCanvasEdge(
-        CANVAS_TEST_PATH,
-        "edge-1",
-        {
-          color: "#FFFF00",
-          label: "Updated Label",
-          fromSide: "bottom" as const,
-        },
-      );
+      // Update the node
+      const response = await request('PUT', `canvas/${TEST_CANVAS_PATH}/nodes/${nodeId}`, {
+        text: 'Updated Node',
+      });
 
-      expect(updatedEdge.id).toBe("edge-1");
-      expect(updatedEdge.color).toBe("#FFFF00");
-      expect(updatedEdge.label).toBe("Updated Label");
-      expect(updatedEdge.fromSide).toBe("bottom");
-      // Verify unchanged properties are preserved
-      expect(updatedEdge.toSide).toBe("left");
-      expect(updatedEdge.toEnd).toBe("arrow");
-
-      // Verify edge was persisted
-      const edge = await requestHandler.operations.getCanvasEdge(CANVAS_TEST_PATH, "edge-1");
-      expect(edge.color).toBe("#FFFF00");
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.text).toBe('Updated Node');
     });
 
-    it("should delete an edge", async () => {
-      if (!app) return;
+    it('should delete a node', async () => {
+      // Create a node first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 100,
+        text: 'Test Node',
+      });
 
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
+      const nodeId = createResponse.json?.id;
 
-      await requestHandler.operations.deleteCanvasEdge(CANVAS_TEST_PATH, "edge-1");
+      // Delete the node
+      const response = await request('DELETE', `canvas/${TEST_CANVAS_PATH}/nodes/${nodeId}`);
 
-      // Verify edge was deleted
-      const edges = await requestHandler.operations.getCanvasEdges(CANVAS_TEST_PATH);
-      expect(edges).toHaveLength(1);
-      expect(edges[0].id).toBe("edge-2");
+      expect(response.statusCode).toBe(204);
+    });
+  });
 
-      // Verify accessing deleted edge throws
-      await expect(
-        requestHandler.operations.getCanvasEdge(CANVAS_TEST_PATH, "edge-1"),
-      ).rejects.toThrow();
+  // Branch 4: Canvas Edge Operations
+  describe('Canvas Edge Operations', () => {
+    let fromNodeId: string;
+    let toNodeId: string;
+
+    beforeAll(async () => {
+      // Create two nodes for edge operations
+      const node1 = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 100,
+        text: 'Node 1',
+      });
+
+      const node2 = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 200,
+        y: 20,
+        width: 100,
+        height: 100,
+        text: 'Node 2',
+      });
+
+      fromNodeId = node1.json?.id;
+      toNodeId = node2.json?.id;
     });
 
-    it("should throw when deleting non-existent edge", async () => {
-      if (!app) return;
+    it('should list edges in a canvas', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/edges`);
 
-      // Create test canvas file
-      await vault.create(CANVAS_TEST_PATH, JSON.stringify(CANVAS_FIXTURE_DATA));
+      expect(response.statusCode).toBe(200);
+      expect(Array.isArray(response.json?.edges)).toBe(true);
+    });
 
-      await expect(
-        requestHandler.operations.deleteCanvasEdge(CANVAS_TEST_PATH, "nonexistent-edge"),
-      ).rejects.toThrow();
+    it('should create a new edge', async () => {
+      const response = await request('POST', `canvas/${TEST_CANVAS_PATH}/edges`, {
+        fromNode: fromNodeId,
+        toNode: toNodeId,
+        fromSide: 'right',
+        toSide: 'left',
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json?.id).toBeDefined();
+      expect(response.json?.fromNode).toBe(fromNodeId);
+      expect(response.json?.toNode).toBe(toNodeId);
+    });
+
+    it('should get a specific edge', async () => {
+      // Create an edge first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/edges`, {
+        fromNode: fromNodeId,
+        toNode: toNodeId,
+      });
+
+      const edgeId = createResponse.json?.id;
+
+      // Get the edge
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/edges/${edgeId}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.id).toBe(edgeId);
+    });
+
+    it('should update an edge', async () => {
+      // Create an edge first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/edges`, {
+        fromNode: fromNodeId,
+        toNode: toNodeId,
+      });
+
+      const edgeId = createResponse.json?.id;
+
+      // Update the edge
+      const response = await request('PUT', `canvas/${TEST_CANVAS_PATH}/edges/${edgeId}`, {
+        label: 'updated edge',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.label).toBe('updated edge');
+    });
+
+    it('should delete an edge', async () => {
+      // Create an edge first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/edges`, {
+        fromNode: fromNodeId,
+        toNode: toNodeId,
+      });
+
+      const edgeId = createResponse.json?.id;
+
+      // Delete the edge
+      const response = await request('DELETE', `canvas/${TEST_CANVAS_PATH}/edges/${edgeId}`);
+
+      expect(response.statusCode).toBe(204);
+    });
+  });
+
+  // Branch 5: Canvas Group Operations
+  describe('Canvas Group Operations', () => {
+    it('should list groups in a canvas', async () => {
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/groups`);
+
+      expect(response.statusCode).toBe(200);
+      expect(Array.isArray(response.json?.groups)).toBe(true);
+    });
+
+    it('should create a new group', async () => {
+      const response = await request('POST', `canvas/${TEST_CANVAS_PATH}/groups`, {
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 300,
+        label: 'Test Group',
+        color: '#ff0000',
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json?.id).toBeDefined();
+      expect(response.json?.type).toBe('group');
+      expect(response.json?.label).toBe('Test Group');
+    });
+
+    it('should get a group with contained nodes', async () => {
+      // Create a group
+      const groupResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/groups`, {
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 300,
+        label: 'Container Group',
+      });
+
+      const groupId = groupResponse.json?.id;
+
+      // Create a node inside the group bounds
+      await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 50,
+        y: 50,
+        width: 100,
+        height: 100,
+        text: 'Contained Node',
+      });
+
+      // Get the group
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/groups/${groupId}`);
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.group?.id).toBe(groupId);
+      expect(Array.isArray(response.json?.containedNodes)).toBe(true);
+    });
+
+    it('should update a group', async () => {
+      // Create a group first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/groups`, {
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 300,
+        label: 'Test Group',
+      });
+
+      const groupId = createResponse.json?.id;
+
+      // Update the group
+      const response = await request('PUT', `canvas/${TEST_CANVAS_PATH}/groups/${groupId}`, {
+        label: 'Updated Group',
+        color: '#00ff00',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json?.label).toBe('Updated Group');
+      expect(response.json?.color).toBe('#00ff00');
+    });
+
+    it('should delete a group', async () => {
+      // Create a group first
+      const createResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/groups`, {
+        x: 0,
+        y: 0,
+        width: 300,
+        height: 300,
+        label: 'Test Group',
+      });
+
+      const groupId = createResponse.json?.id;
+
+      // Delete the group
+      const response = await request('DELETE', `canvas/${TEST_CANVAS_PATH}/groups/${groupId}`);
+
+      expect(response.statusCode).toBe(204);
+    });
+
+    it('should detect spatial containment correctly', async () => {
+      // Create a group
+      const groupResponse = await request('POST', `canvas/${TEST_CANVAS_PATH}/groups`, {
+        x: 100,
+        y: 100,
+        width: 200,
+        height: 200,
+        label: 'Boundary Test Group',
+      });
+
+      const groupId = groupResponse.json?.id;
+
+      // Create nodes with different positions
+      // Node inside
+      const insideNode = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 120,
+        y: 120,
+        width: 50,
+        height: 50,
+        text: 'Inside',
+      });
+
+      // Node partially outside
+      const partialNode = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 200,
+        y: 200,
+        width: 150,
+        height: 150,
+        text: 'Partial',
+      });
+
+      // Node completely outside
+      const outsideNode = await request('POST', `canvas/${TEST_CANVAS_PATH}/nodes`, {
+        type: 'text',
+        x: 400,
+        y: 400,
+        width: 50,
+        height: 50,
+        text: 'Outside',
+      });
+
+      // Get group with contained nodes
+      const response = await request('GET', `canvas/${TEST_CANVAS_PATH}/groups/${groupId}`);
+
+      expect(response.statusCode).toBe(200);
+      const containedIds = response.json?.containedNodes?.map((n: any) => n.id);
+
+      // Only the inside node should be contained (fully within bounds)
+      expect(containedIds).toContain(insideNode.json?.id);
+      expect(containedIds).not.toContain(partialNode.json?.id);
+      expect(containedIds).not.toContain(outsideNode.json?.id);
     });
   });
 });
