@@ -56,6 +56,14 @@ export const ERROR_CODE_MESSAGES: Record<ErrorCode, string> = {
     "Destination file already exists.",
   [ErrorCode.FileOperationFailed]:
     "File operation failed. Check the error message for details.",
+  [ErrorCode.InvalidCanvasData]:
+    "Canvas JSON is invalid or malformed.",
+  [ErrorCode.CanvasNodeNotFound]:
+    "Canvas node not found.",
+  [ErrorCode.CanvasEdgeNotFound]:
+    "Canvas edge not found.",
+  [ErrorCode.CanvasGroupNotFound]:
+    "Canvas group not found.",
 };
 
 export enum ContentTypes {

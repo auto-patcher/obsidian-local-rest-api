@@ -21,6 +21,9 @@ import {
 import { SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/sdk/types.js";
 
 import {
+  CanvasData,
+  CanvasEdge,
+  CanvasNode,
   CannedResponse,
   DocumentMapObject,
   ErrorCode,
@@ -1364,6 +1367,643 @@ export default class RequestHandler {
     res.json();
   }
 
+  async canvasGet(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    try {
+      const data = await this.operations.readCanvas(path);
+      res.json(data);
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasStatsGet(req: express.Request, res: express.Response): Promise<void> {
+    const rawPath = req.params[0];
+    if (!rawPath) {
+      this.returnCannedResponse(res, { statusCode: 400 });
+      return;
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(rawPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+      return;
+    }
+
+    if (path.includes("..")) {
+      this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+      return;
+    }
+
+    try {
+      const stats = await this.operations.getCanvasStats(path);
+      res.json(stats);
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasPut(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    try {
+      const data = req.body;
+      if (!data || typeof data !== "object") {
+        return this.returnCannedResponse(res, {
+          statusCode: 400,
+          message: "Request body must be a JSON object with canvas data",
+        });
+      }
+      await this.operations.writeCanvas(path, data);
+      res.json(data);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasDelete(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    try {
+      await this.operations.deleteCanvas(path);
+      res.status(204).send();
+    } catch (error) {
+      if (error instanceof FileNotFoundError) {
+        return this.returnCannedResponse(res, { statusCode: 404 });
+      }
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 500,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasSearchPost(req: express.Request, res: express.Response): Promise<void> {
+    const query = req.body.query as string;
+    const dirPath = req.body.dirPath as string | undefined;
+
+    if (typeof query !== "string" || !query) {
+      return this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: "Request body must contain a 'query' string",
+      });
+    }
+
+    try {
+      const results = await this.operations.searchCanvases(query, dirPath);
+      res.json({ results });
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 500,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasListFilesGet(req: express.Request, res: express.Response): Promise<void> {
+    const rawPath = req.params[0];
+    let dirPath = "";
+    if (rawPath) {
+      try {
+        dirPath = decodeURIComponent(rawPath)
+          .replace(/\\/g, "/")
+          .replace(/\/+/g, "/")
+          .replace(/^\/+/, "");
+      } catch {
+        this.returnCannedResponse(res, {
+          errorCode: ErrorCode.PathTraversalNotAllowed,
+        });
+        return;
+      }
+      if (dirPath.includes("..")) {
+        this.returnCannedResponse(res, {
+          errorCode: ErrorCode.PathTraversalNotAllowed,
+        });
+        return;
+      }
+    }
+
+    try {
+      const files = await this.operations.listCanvasFiles(dirPath);
+      res.json({ files });
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasNodesGet(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    const typeFilter = req.query.type as string | undefined;
+
+    try {
+      const nodes = await this.operations.getCanvasNodes(path, typeFilter);
+      res.json(nodes);
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasNodeGet(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const nodeId = req.params.nodeId;
+
+    if (!canvasPath || !nodeId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const node = await this.operations.getCanvasNode(path, nodeId);
+      res.json(node);
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasNodesPost(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    try {
+      const nodeData = req.body;
+      if (!nodeData || typeof nodeData !== "object") {
+        return this.returnCannedResponse(res, {
+          statusCode: 400,
+          message: "Request body must be a JSON object with node properties",
+        });
+      }
+
+      const newNode = await this.operations.addCanvasNode(path, nodeData);
+      res.status(201).json(newNode);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasNodePut(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const nodeId = req.params.nodeId;
+
+    if (!canvasPath || !nodeId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const updates = req.body;
+      if (!updates || typeof updates !== "object") {
+        return this.returnCannedResponse(res, {
+          statusCode: 400,
+          message: "Request body must be a JSON object with update properties",
+        });
+      }
+
+      const updatedNode = await this.operations.updateCanvasNode(path, nodeId, updates);
+      res.json(updatedNode);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasNodeDelete(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const nodeId = req.params.nodeId;
+
+    if (!canvasPath || !nodeId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    const deleteEdges = req.query.deleteEdges === "true";
+
+    try {
+      await this.operations.deleteCanvasNode(path, nodeId, deleteEdges);
+      res.status(204).send();
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasEdgesGet(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+
+    if (!canvasPath) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const edges = await this.operations.getCanvasEdges(path);
+      res.json({ edges });
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasEdgeGet(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const edgeId = req.params.edgeId;
+
+    if (!canvasPath || !edgeId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const edge = await this.operations.getCanvasEdge(path, edgeId);
+      res.json(edge);
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasEdgesPost(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+
+    if (!canvasPath) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const edge = await this.operations.addCanvasEdge(path, req.body as Omit<import("./types").CanvasEdge, "id">);
+      res.status(201).json(edge);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasEdgePut(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const edgeId = req.params.edgeId;
+
+    if (!canvasPath || !edgeId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const edge = await this.operations.updateCanvasEdge(path, edgeId, req.body as Partial<import("./types").CanvasEdge>);
+      res.json(edge);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 404,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasEdgeDelete(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const edgeId = req.params.edgeId;
+
+    if (!canvasPath || !edgeId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      await this.operations.deleteCanvasEdge(path, edgeId);
+      res.status(204).send();
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 404,
+        message: err.message,
+      });
+    }
+  }
+
+  // Canvas Groups (Branch 5)
+
+  async canvasGroupsGet(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    try {
+      const groups = await this.operations.getCanvasGroups(path);
+      res.json({ groups });
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasGroupGet(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const groupId = req.params.groupId;
+
+    if (!canvasPath || !groupId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const result = await this.operations.getCanvasGroup(path, groupId);
+      res.json(result);
+    } catch (error) {
+      this.returnCannedResponse(res, { statusCode: 404 });
+    }
+  }
+
+  async canvasGroupsPost(req: express.Request, res: express.Response): Promise<void> {
+    const path = this.extractVaultPath(req, res);
+    if (path === null) return;
+
+    try {
+      const groupData = req.body;
+      if (!groupData || typeof groupData !== "object") {
+        return this.returnCannedResponse(res, {
+          statusCode: 400,
+          message: "Request body must be a JSON object with group properties",
+        });
+      }
+
+      const newGroup = await this.operations.addCanvasGroup(path, groupData);
+      res.status(201).json(newGroup);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasGroupPut(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const groupId = req.params.groupId;
+
+    if (!canvasPath || !groupId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      const updates = req.body;
+      if (!updates || typeof updates !== "object") {
+        return this.returnCannedResponse(res, {
+          statusCode: 400,
+          message: "Request body must be a JSON object with update properties",
+        });
+      }
+
+      const updatedGroup = await this.operations.updateCanvasGroup(path, groupId, updates);
+      res.json(updatedGroup);
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
+  async canvasGroupDelete(req: express.Request, res: express.Response): Promise<void> {
+    const canvasPath = req.params[0];
+    const groupId = req.params.groupId;
+
+    if (!canvasPath || !groupId) {
+      return this.returnCannedResponse(res, { statusCode: 400 });
+    }
+
+    let path: string;
+    try {
+      path = decodeURIComponent(canvasPath)
+        .replace(/\\/g, "/")
+        .replace(/\/+/g, "/")
+        .replace(/^\/+/, "");
+    } catch {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    if (path.includes("..")) {
+      return this.returnCannedResponse(res, {
+        errorCode: ErrorCode.PathTraversalNotAllowed,
+      });
+    }
+
+    try {
+      await this.operations.deleteCanvasGroup(path, groupId);
+      res.status(204).send();
+    } catch (error) {
+      const err = error as Error;
+      this.returnCannedResponse(res, {
+        statusCode: 400,
+        message: err.message,
+      });
+    }
+  }
+
   async certificateGet(
     _req: express.Request,
     res: express.Response,
@@ -1543,6 +2183,61 @@ export default class RequestHandler {
     this.api.route("/search/simple/").post(this.handle((rq, rs) => this.searchSimplePost(rq, rs)));
 
     this.api.route("/open/*").post(this.handle((rq, rs) => this.openPost(rq, rs)));
+
+    // Canvas routes: register /search/ BEFORE the wildcard to avoid matching
+    this.api.route("/canvas/search/").post(this.handle((rq, rs) => this.canvasSearchPost(rq, rs)));
+
+    // Canvas node routes: register specific routes BEFORE the wildcard catch-all
+    this.api
+      .route("/canvas/:canvasPath(*)/nodes/:nodeId")
+      .get(this.handle((rq, rs) => this.canvasNodeGet(rq, rs)))
+      .put(this.handle((rq, rs) => this.canvasNodePut(rq, rs)))
+      .delete(this.handle((rq, rs) => this.canvasNodeDelete(rq, rs)));
+
+    this.api
+      .route("/canvas/:canvasPath(*)/nodes")
+      .get(this.handle((rq, rs) => this.canvasNodesGet(rq, rs)))
+      .post(this.handle((rq, rs) => this.canvasNodesPost(rq, rs)));
+
+    // Canvas edge routes: register specific routes BEFORE the wildcard catch-all
+    this.api
+      .route("/canvas/:canvasPath(*)/edges/:edgeId")
+      .get(this.handle((rq, rs) => this.canvasEdgeGet(rq, rs)))
+      .put(this.handle((rq, rs) => this.canvasEdgePut(rq, rs)))
+      .delete(this.handle((rq, rs) => this.canvasEdgeDelete(rq, rs)));
+
+    this.api
+      .route("/canvas/:canvasPath(*)/edges")
+      .get(this.handle((rq, rs) => this.canvasEdgesGet(rq, rs)))
+      .post(this.handle((rq, rs) => this.canvasEdgesPost(rq, rs)));
+
+    // Canvas group routes: register specific routes BEFORE the wildcard catch-all
+    this.api
+      .route("/canvas/:canvasPath(*)/groups/:groupId")
+      .get(this.handle((rq, rs) => this.canvasGroupGet(rq, rs)))
+      .put(this.handle((rq, rs) => this.canvasGroupPut(rq, rs)))
+      .delete(this.handle((rq, rs) => this.canvasGroupDelete(rq, rs)));
+
+    this.api
+      .route("/canvas/:canvasPath(*)/groups")
+      .get(this.handle((rq, rs) => this.canvasGroupsGet(rq, rs)))
+      .post(this.handle((rq, rs) => this.canvasGroupsPost(rq, rs)));
+
+    this.api.route("/canvas/*/stats").get(this.handle((rq, rs) => this.canvasStatsGet(rq, rs)));
+    this.api
+      .route("/canvas/*")
+      .get(this.handle((rq, rs) => {
+        // Route GET /canvas/* to either list files or read canvas based on path
+        const rawPath = rq.params[0];
+        if (!rawPath || !rawPath.endsWith(".canvas")) {
+          // List files if no path or path doesn't end with .canvas
+          return this.canvasListFilesGet(rq, rs);
+        }
+        // Read canvas if path ends with .canvas
+        return this.canvasGet(rq, rs);
+      }))
+      .put(this.handle((rq, rs) => this.canvasPut(rq, rs)))
+      .delete(this.handle((rq, rs) => this.canvasDelete(rq, rs)));
 
     this.api.get(`/${CERT_NAME}`, this.handle((rq, rs) => this.certificateGet(rq, rs)));
     this.api.get("/openapi.yaml", this.handle((rq, rs) => this.openapiYamlGet(rq, rs)));

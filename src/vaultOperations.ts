@@ -8,6 +8,7 @@ import {
 } from "obsidian";
 import * as periodicNotes from "obsidian-daily-notes-interface";
 import path from "path";
+import { randomBytes } from "crypto";
 import {
   applyPatch,
   getDocumentMap,
@@ -28,6 +29,10 @@ export class CommandNotFoundError extends Error {}
 export class DestinationAlreadyExistsError extends Error {}
 
 import {
+  CanvasData,
+  CanvasEdge,
+  CanvasNode,
+  CanvasStats,
   DocumentMapObject,
   ErrorCode,
   FileMetadataObject,
@@ -631,5 +636,332 @@ export class VaultOperations {
 
   openVaultFile(filePath: string, newLeaf = false): void {
     void this.app.workspace.openLinkText(filePath, "/", newLeaf);
+  }
+
+  // Canvas operations
+
+  private _generateCanvasId(): string {
+    return randomBytes(8).toString("hex");
+  }
+
+  private async _readCanvasData(filePath: string): Promise<CanvasData> {
+    const content = await this.readFileContent(filePath);
+    try {
+      const data = JSON.parse(content) as CanvasData;
+      return data;
+    } catch (e) {
+      throw new Error(`Invalid canvas data: ${filePath}`);
+    }
+  }
+
+  private async _writeCanvasData(filePath: string, data: CanvasData): Promise<void> {
+    const content = JSON.stringify(data, null, 2);
+    await this.writeFileContent(filePath, content);
+  }
+
+  // Branch 1: Canvas File Operations
+
+  async listCanvasFiles(dirPath = ""): Promise<string[]> {
+    const normalizedPath = dirPath.endsWith("/") ? dirPath.slice(0, -1) : dirPath;
+    const prefix = normalizedPath ? normalizedPath + "/" : "";
+    const files = [
+      ...new Set(
+        this.app.vault
+          .getFiles()
+          .map((e) => e.path)
+          .filter((filename) => filename.startsWith(prefix) && filename.endsWith(".canvas"))
+          .map((filename) => {
+            const subPath = filename.slice(prefix.length);
+            if (subPath.indexOf("/") > -1) {
+              return subPath.slice(0, subPath.indexOf("/") + 1);
+            }
+            return subPath;
+          }),
+      ),
+    ];
+    files.sort();
+    return files;
+  }
+
+  async readCanvas(filePath: string): Promise<CanvasData> {
+    return this._readCanvasData(filePath);
+  }
+
+  async writeCanvas(filePath: string, data: CanvasData): Promise<CanvasData> {
+    await this._writeCanvasData(filePath, data);
+    return data;
+  }
+
+  async deleteCanvas(filePath: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!file) {
+      throw new Error(`File not found: ${filePath}`);
+    }
+    await this.app.vault.delete(file);
+  }
+
+  async searchCanvases(query: string, dirPath = ""): Promise<Array<{ path: string; matches: number }>> {
+    const normalizedPath = dirPath.endsWith("/") ? dirPath.slice(0, -1) : dirPath;
+    const prefix = normalizedPath ? normalizedPath + "/" : "";
+    const results: Array<{ path: string; matches: number }> = [];
+
+    for (const file of this.app.vault.getFiles()) {
+      if (!file.path.startsWith(prefix) || !file.path.endsWith(".canvas")) continue;
+
+      try {
+        const content = await this.readFileContent(file.path);
+        const matches = (content.match(new RegExp(query, "gi")) || []).length;
+        if (matches > 0) {
+          results.push({ path: file.path, matches });
+        }
+      } catch {
+        // Skip files that can't be read
+      }
+    }
+
+    results.sort((a, b) => b.matches - a.matches);
+    return results;
+  }
+
+  // Branch 2: Canvas Metadata Operations
+
+  async getCanvasStats(filePath: string): Promise<CanvasStats> {
+    const data = await this._readCanvasData(filePath);
+
+    const nodeCountByType: Record<string, number> = {};
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const node of data.nodes) {
+      nodeCountByType[node.type] = (nodeCountByType[node.type] || 0) + 1;
+      minX = Math.min(minX, node.x);
+      minY = Math.min(minY, node.y);
+      maxX = Math.max(maxX, node.x + node.width);
+      maxY = Math.max(maxY, node.y + node.height);
+    }
+
+    // Handle empty canvas
+    if (data.nodes.length === 0) {
+      minX = 0;
+      minY = 0;
+      maxX = 0;
+      maxY = 0;
+    }
+
+    return {
+      nodeCount: data.nodes.length,
+      nodeCountByType,
+      edgeCount: data.edges.length,
+      boundingBox: {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        width: maxX - minX,
+        height: maxY - minY,
+      },
+    };
+  }
+
+  // Branch 3: Canvas Card (Node) Operations
+
+  async getCanvasNodes(filePath: string, typeFilter?: string): Promise<CanvasNode[]> {
+    const data = await this._readCanvasData(filePath);
+    if (typeFilter) {
+      return data.nodes.filter((node) => node.type === typeFilter);
+    }
+    return data.nodes;
+  }
+
+  async getCanvasNode(filePath: string, nodeId: string): Promise<CanvasNode> {
+    const data = await this._readCanvasData(filePath);
+    const node = data.nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      throw new Error(`Canvas node not found: ${nodeId}`);
+    }
+    return node;
+  }
+
+  async addCanvasNode(filePath: string, node: Omit<CanvasNode, "id">): Promise<CanvasNode> {
+    const data = await this._readCanvasData(filePath);
+    const newNode: CanvasNode = {
+      ...node,
+      id: this._generateCanvasId(),
+    };
+    data.nodes.push(newNode);
+    await this._writeCanvasData(filePath, data);
+    return newNode;
+  }
+
+  async updateCanvasNode(
+    filePath: string,
+    nodeId: string,
+    updates: Partial<CanvasNode>,
+  ): Promise<CanvasNode> {
+    const data = await this._readCanvasData(filePath);
+    const node = data.nodes.find((n) => n.id === nodeId);
+    if (!node) {
+      throw new Error(`Canvas node not found: ${nodeId}`);
+    }
+    const updated = { ...node, ...updates, id: node.id };
+    const index = data.nodes.indexOf(node);
+    data.nodes[index] = updated;
+    await this._writeCanvasData(filePath, data);
+    return updated;
+  }
+
+  async deleteCanvasNode(filePath: string, nodeId: string, deleteEdges = false): Promise<void> {
+    const data = await this._readCanvasData(filePath);
+    const nodeIndex = data.nodes.findIndex((n) => n.id === nodeId);
+    if (nodeIndex === -1) {
+      throw new Error(`Canvas node not found: ${nodeId}`);
+    }
+    data.nodes.splice(nodeIndex, 1);
+
+    if (deleteEdges) {
+      data.edges = data.edges.filter((e) => e.fromNode !== nodeId && e.toNode !== nodeId);
+    }
+
+    await this._writeCanvasData(filePath, data);
+  }
+
+  // Branch 4: Canvas Line (Edge) Operations
+
+  async getCanvasEdges(filePath: string): Promise<CanvasEdge[]> {
+    const data = await this._readCanvasData(filePath);
+    return data.edges;
+  }
+
+  async getCanvasEdge(filePath: string, edgeId: string): Promise<CanvasEdge> {
+    const data = await this._readCanvasData(filePath);
+    const edge = data.edges.find((e) => e.id === edgeId);
+    if (!edge) {
+      throw new Error(`Canvas edge not found: ${edgeId}`);
+    }
+    return edge;
+  }
+
+  async addCanvasEdge(filePath: string, edge: Omit<CanvasEdge, "id">): Promise<CanvasEdge> {
+    const data = await this._readCanvasData(filePath);
+    const newEdge: CanvasEdge = {
+      ...edge,
+      id: this._generateCanvasId(),
+    };
+    data.edges.push(newEdge);
+    await this._writeCanvasData(filePath, data);
+    return newEdge;
+  }
+
+  async updateCanvasEdge(
+    filePath: string,
+    edgeId: string,
+    updates: Partial<CanvasEdge>,
+  ): Promise<CanvasEdge> {
+    const data = await this._readCanvasData(filePath);
+    const edge = data.edges.find((e) => e.id === edgeId);
+    if (!edge) {
+      throw new Error(`Canvas edge not found: ${edgeId}`);
+    }
+    const updated = { ...edge, ...updates, id: edge.id };
+    const index = data.edges.indexOf(edge);
+    data.edges[index] = updated;
+    await this._writeCanvasData(filePath, data);
+    return updated;
+  }
+
+  async deleteCanvasEdge(filePath: string, edgeId: string): Promise<void> {
+    const data = await this._readCanvasData(filePath);
+    const edgeIndex = data.edges.findIndex((e) => e.id === edgeId);
+    if (edgeIndex === -1) {
+      throw new Error(`Canvas edge not found: ${edgeId}`);
+    }
+    data.edges.splice(edgeIndex, 1);
+    await this._writeCanvasData(filePath, data);
+  }
+
+  // Branch 5: Canvas Region (Group) Operations
+
+  private _getNodesInBounds(
+    nodes: CanvasNode[],
+    bounds: { x: number; y: number; width: number; height: number },
+  ): CanvasNode[] {
+    return nodes.filter((node) => {
+      const nodeRight = node.x + node.width;
+      const nodeBottom = node.y + node.height;
+      const boundsRight = bounds.x + bounds.width;
+      const boundsBottom = bounds.y + bounds.height;
+
+      return (
+        node.x >= bounds.x &&
+        node.y >= bounds.y &&
+        nodeRight <= boundsRight &&
+        nodeBottom <= boundsBottom
+      );
+    });
+  }
+
+  async getCanvasGroups(filePath: string): Promise<CanvasNode[]> {
+    const data = await this._readCanvasData(filePath);
+    return data.nodes.filter((node) => node.type === "group");
+  }
+
+  async getCanvasGroup(
+    filePath: string,
+    groupId: string,
+  ): Promise<{ group: CanvasNode; containedNodes: CanvasNode[] }> {
+    const data = await this._readCanvasData(filePath);
+    const group = data.nodes.find((n) => n.id === groupId && n.type === "group");
+    if (!group) {
+      throw new Error(`Canvas group not found: ${groupId}`);
+    }
+    const containedNodes = this._getNodesInBounds(
+      data.nodes.filter((n) => n.id !== groupId),
+      { x: group.x, y: group.y, width: group.width, height: group.height },
+    );
+    return { group, containedNodes };
+  }
+
+  async addCanvasGroup(
+    filePath: string,
+    group: Omit<CanvasNode, "id" | "type">,
+  ): Promise<CanvasNode> {
+    const data = await this._readCanvasData(filePath);
+    const newGroup: CanvasNode = {
+      ...group,
+      id: this._generateCanvasId(),
+      type: "group",
+    };
+    data.nodes.push(newGroup);
+    await this._writeCanvasData(filePath, data);
+    return newGroup;
+  }
+
+  async updateCanvasGroup(
+    filePath: string,
+    groupId: string,
+    updates: Partial<CanvasNode>,
+  ): Promise<CanvasNode> {
+    const data = await this._readCanvasData(filePath);
+    const group = data.nodes.find((n) => n.id === groupId && n.type === "group");
+    if (!group) {
+      throw new Error(`Canvas group not found: ${groupId}`);
+    }
+    const updated = { ...group, ...updates, id: group.id, type: "group" };
+    const index = data.nodes.indexOf(group);
+    data.nodes[index] = updated;
+    await this._writeCanvasData(filePath, data);
+    return updated;
+  }
+
+  async deleteCanvasGroup(filePath: string, groupId: string): Promise<void> {
+    const data = await this._readCanvasData(filePath);
+    const groupIndex = data.nodes.findIndex((n) => n.id === groupId && n.type === "group");
+    if (groupIndex === -1) {
+      throw new Error(`Canvas group not found: ${groupId}`);
+    }
+    data.nodes.splice(groupIndex, 1);
+    await this._writeCanvasData(filePath, data);
   }
 }

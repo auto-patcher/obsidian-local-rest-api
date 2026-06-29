@@ -165,6 +165,7 @@ std.manifestYamlDoc(
       { name: 'Active File' },
       { name: 'Periodic Notes' },
       { name: 'Vault Directories' },
+      { name: 'Canvas' },
       { name: 'Search' },
       { name: 'Commands' },
       { name: 'Open' },
@@ -815,6 +816,259 @@ std.manifestYamlDoc(
                         description: 'Is your current request authenticated?',
                       },
                     },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/search/': {
+        post: {
+          tags: ['Canvas'],
+          summary: 'Search for text across canvas files.\n',
+          description: importstr 'lib/descriptions/canvas-search.md',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'Text to search for in canvas files',
+                    },
+                    dirPath: {
+                      type: 'string',
+                      description: 'Directory to search in (optional)',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Search results',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      results: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            path: {
+                              type: 'string',
+                            },
+                            matches: {
+                              type: 'integer',
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{path}': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get a canvas file or list canvas files in a directory.\n',
+          description: importstr 'lib/descriptions/canvas-list.md',
+          parameters: [ParamPath],
+          responses: {
+            '200': {
+              description: 'Canvas content or directory listing',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [
+                      {
+                        type: 'object',
+                        properties: {
+                          nodes: {
+                            type: 'array',
+                            description: 'Canvas nodes',
+                          },
+                          edges: {
+                            type: 'array',
+                            description: 'Canvas edges',
+                          },
+                        },
+                      },
+                      {
+                        type: 'object',
+                        properties: {
+                          files: {
+                            type: 'array',
+                            items: {
+                              type: 'string',
+                            },
+                            description: 'Canvas files and directories',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            '404': {
+              description: 'Canvas file not found',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: ['Canvas'],
+          summary: 'Create or overwrite a canvas file.\n',
+          description: importstr 'lib/descriptions/canvas-put.md',
+          parameters: [ParamPath],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['nodes', 'edges'],
+                  properties: {
+                    nodes: {
+                      type: 'array',
+                      description: 'Array of canvas nodes',
+                    },
+                    edges: {
+                      type: 'array',
+                      description: 'Array of canvas edges',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Canvas created or updated',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                  },
+                },
+              },
+            },
+            '400': {
+              description: 'Invalid canvas data',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: ['Canvas'],
+          summary: 'Delete a canvas file.\n',
+          description: importstr 'lib/descriptions/canvas-delete.md',
+          parameters: [ParamPath],
+          responses: {
+            '204': {
+              description: 'Canvas deleted',
+            },
+            '404': {
+              description: 'Canvas file not found',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{path}/stats': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get statistics for a canvas file.\n',
+          description: importstr 'lib/descriptions/canvas-stats.md',
+          parameters: [ParamPath],
+          responses: {
+            '200': {
+              description: 'Canvas statistics',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      nodeCount: {
+                        type: 'number',
+                        description: 'Total number of nodes',
+                      },
+                      nodeCountByType: {
+                        type: 'object',
+                        description: 'Count of nodes by type (text, file, link, group)',
+                        additionalProperties: {
+                          type: 'number',
+                        },
+                      },
+                      edgeCount: {
+                        type: 'number',
+                        description: 'Total number of edges',
+                      },
+                      boundingBox: {
+                        type: 'object',
+                        description: 'Bounding box of all nodes',
+                        properties: {
+                          minX: {
+                            type: 'number',
+                          },
+                          minY: {
+                            type: 'number',
+                          },
+                          maxX: {
+                            type: 'number',
+                          },
+                          maxY: {
+                            type: 'number',
+                          },
+                          width: {
+                            type: 'number',
+                          },
+                          height: {
+                            type: 'number',
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '404': {
+              description: 'Canvas file not found',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
                   },
                 },
               },

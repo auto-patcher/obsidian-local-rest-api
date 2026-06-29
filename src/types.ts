@@ -25,9 +25,13 @@ export enum ErrorCode {
   ApiKeyAuthorizationRequired = 40101,
   PeriodDoesNotExist = 40460,
   PeriodicNoteDoesNotExist = 40461,
+  CanvasNodeNotFound = 40470,
+  CanvasEdgeNotFound = 40471,
+  CanvasGroupNotFound = 40472,
   RequestMethodValidOnlyForFiles = 40510,
   DestinationAlreadyExists = 40920,
   ConflictingTargetSpecification = 42200,
+  InvalidCanvasData = 40075,
   ErrorPreparingSimpleSearch = 50010,
   FileOperationFailed = 50020,
 }
@@ -163,4 +167,52 @@ export interface DocumentMapObject {
   headings: string[];
   blocks: string[];
   frontmatterFields: string[];
+}
+
+export interface CanvasNode {
+  id: string;
+  type: "text" | "file" | "link" | "group";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color?: string;
+  text?: string; // text nodes
+  file?: string; // file nodes
+  subpath?: string; // file nodes
+  url?: string; // link nodes
+  label?: string; // group nodes
+  background?: string; // group nodes
+  backgroundStyle?: string; // group nodes
+}
+
+export interface CanvasEdge {
+  id: string;
+  fromNode: string;
+  toNode: string;
+  fromSide?: "top" | "right" | "bottom" | "left";
+  toSide?: "top" | "right" | "bottom" | "left";
+  fromEnd?: "none" | "arrow";
+  toEnd?: "none" | "arrow";
+  color?: string;
+  label?: string;
+}
+
+export interface CanvasData {
+  nodes: CanvasNode[];
+  edges: CanvasEdge[];
+}
+
+export interface CanvasStats {
+  nodeCount: number;
+  nodeCountByType: Record<string, number>;
+  edgeCount: number;
+  boundingBox: {
+    minX: number;
+    minY: number;
+    maxX: number;
+    maxY: number;
+    width: number;
+    height: number;
+  };
 }
