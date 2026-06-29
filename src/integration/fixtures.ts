@@ -72,3 +72,70 @@ A paragraph after the table in Gamma.
 
 Content in Delta for append and prepend tests. xylophone-delta-unique.
 `;
+
+// Canvas fixtures
+export const CANVAS_TEST_PATH = `${TEST_DIR}/test.canvas`;
+
+export const CANVAS_FIXTURE_DATA = {
+  nodes: [
+    {
+      id: "node-text-1",
+      type: "text" as const,
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 100,
+      text: "Text Node",
+      color: "#FF0000",
+    },
+    {
+      id: "node-file-1",
+      type: "file" as const,
+      x: 150,
+      y: 0,
+      width: 200,
+      height: 100,
+      file: "test.md",
+    },
+    {
+      id: "node-link-1",
+      type: "link" as const,
+      x: 50,
+      y: 200,
+      width: 300,
+      height: 100,
+      url: "https://example.com",
+    },
+    {
+      id: "node-group-1",
+      type: "group" as const,
+      x: 50,
+      y: 200,
+      width: 600,
+      height: 300,
+      label: "Test Group",
+      background: "#CCCCCC",
+    },
+  ],
+  edges: [
+    {
+      id: "edge-1",
+      fromNode: "node-text-1",
+      toNode: "node-file-1",
+      fromSide: "right" as const,
+      toSide: "left" as const,
+      fromEnd: "none" as const,
+      toEnd: "arrow" as const,
+      color: "#0000FF",
+      label: "Test Edge 1",
+    },
+    {
+      id: "edge-2",
+      fromNode: "node-file-1",
+      toNode: "node-link-1",
+      fromSide: "bottom" as const,
+      toSide: "top" as const,
+      color: "#00FF00",
+    },
+  ],
+};
