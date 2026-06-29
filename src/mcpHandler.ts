@@ -631,5 +631,458 @@ export class McpHandler {
         return this.text({ message: "OK" });
       },
     );
+
+    // Canvas File Operations (Branch 1)
+
+    this.tool(
+      "canvas_list",
+      "List .canvas files in a vault directory. " +
+        "Returns an array of canvas file names and directory entries. " +
+        "Omit dirPath or pass an empty string to list the vault root.",
+      {
+        dirPath: z.string().optional().describe("Directory path relative to vault root (default: root)"),
+      },
+      async ({ dirPath }: { dirPath?: string }) => {
+        const files = await this.ops.listCanvasFiles(dirPath ?? "");
+        return this.text({ files });
+      },
+    );
+
+    this.tool(
+      "canvas_read",
+      "Read a canvas file and return its JSON structure with nodes and edges. " +
+        "Each node has an id, type (text/file/link/group), and position/size (x, y, width, height). " +
+        "Each edge connects two nodes with optional styling. " +
+        "Throws if the canvas file does not exist or is invalid JSON.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root (must end with .canvas)"),
+      },
+      async ({ path }: { path: string }) => {
+        const data = await this.ops.readCanvas(path);
+        return this.text(data);
+      },
+    );
+
+    this.tool(
+      "canvas_write",
+      "Create or overwrite a canvas file with the given JSON structure. " +
+        "Creates any missing parent directories automatically. " +
+        "Input must have 'nodes' array (each with id, type, x, y, width, height) and 'edges' array (each with id, fromNode, toNode).",
+      {
+        path: z.string().describe("Canvas file path relative to vault root (must end with .canvas)"),
+        data: z.record(z.unknown()).describe("Canvas data object with 'nodes' and 'edges' arrays"),
+      },
+      async ({ path, data }: { path: string; data: Record<string, unknown> }) => {
+        await this.ops.writeCanvas(path, data as unknown as any);
+        return this.text({ message: "OK" });
+      },
+    );
+
+    this.tool(
+      "canvas_delete",
+      "Delete a canvas file from the vault. " +
+        "Throws if the canvas file does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root (must end with .canvas)"),
+      },
+      async ({ path }: { path: string }) => {
+        await this.ops.deleteCanvas(path);
+        return this.text({ message: "OK" });
+      },
+    );
+
+    this.tool(
+      "canvas_search",
+      "Search for text across all canvas files in a directory. " +
+        "Searches both node text and edge labels. " +
+        "Returns array of canvas files with matching text and context snippets.",
+      {
+        query: z.string().describe("Text query to search for"),
+        dirPath: z.string().optional().describe("Directory path relative to vault root (default: root)"),
+      },
+      async ({ query, dirPath }: { query: string; dirPath?: string }) => {
+        const results = await this.ops.searchCanvases(query, dirPath);
+        return this.text({ results });
+      },
+    );
+
+    // Canvas Metadata Operations (Branch 2)
+
+    this.tool(
+      "canvas_get_stats",
+      "Get statistics for a canvas file including node and edge counts, node counts by type, and bounding box information. " +
+        "The bounding box includes minX, minY, maxX, maxY (absolute coordinates), and computed width/height. " +
+        "Throws if the canvas file does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+      },
+      async ({ path }: { path: string }) => {
+        const stats = await this.ops.getCanvasStats(path);
+        return this.text(stats);
+      },
+    );
+
+    // Canvas Card (Node) Operations (Branch 3)
+
+    this.tool(
+      "canvas_list_nodes",
+      "List all nodes in a canvas file, with optional filtering by node type. " +
+        "Returns an array of node objects. Each node has id, type (text/file/link/group), " +
+        "position/size (x, y, width, height), and optional properties (color, text, file, url, label, etc). " +
+        "Optional type filter narrows results to a specific node type.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        type: z
+          .enum(["text", "file", "link", "group"])
+          .optional()
+          .describe("Filter nodes by type (text, file, link, or group)"),
+      },
+      async ({ path, type }: { path: string; type?: "text" | "file" | "link" | "group" }) => {
+        const nodes = await this.ops.getCanvasNodes(path, type);
+        return this.text(nodes);
+      },
+    );
+
+    this.tool(
+      "canvas_get_node",
+      "Get a single node from a canvas by its ID. " +
+        "Returns the complete node object with all properties. " +
+        "Throws if the canvas file or node does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        nodeId: z.string().describe("Node ID"),
+      },
+      async ({ path, nodeId }: { path: string; nodeId: string }) => {
+        const node = await this.ops.getCanvasNode(path, nodeId);
+        return this.text(node);
+      },
+    );
+
+    this.tool(
+      "canvas_create_node",
+      "Create a new node in a canvas and return the created node with a generated ID. " +
+        "Required fields: type (text/file/link/group), x, y, width, height. " +
+        "Optional fields vary by type: text (text content), file/url (reference), label/background (group styling).",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        type: z
+          .enum(["text", "file", "link", "group"])
+          .describe("Node type"),
+        x: z.number().describe("X coordinate"),
+        y: z.number().describe("Y coordinate"),
+        width: z.number().describe("Node width"),
+        height: z.number().describe("Node height"),
+        color: z.string().optional().describe("Node color (optional)"),
+        text: z.string().optional().describe("Text content (for text nodes)"),
+        file: z.string().optional().describe("File reference (for file nodes)"),
+        subpath: z.string().optional().describe("Section within file (for file nodes)"),
+        url: z.string().optional().describe("URL (for link nodes)"),
+        label: z.string().optional().describe("Label (for group nodes)"),
+        background: z.string().optional().describe("Background color (for group nodes)"),
+        backgroundStyle: z.string().optional().describe("Background style (for group nodes)"),
+      },
+      async (props: {
+        path: string;
+        type: "text" | "file" | "link" | "group";
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        color?: string;
+        text?: string;
+        file?: string;
+        subpath?: string;
+        url?: string;
+        label?: string;
+        background?: string;
+        backgroundStyle?: string;
+      }) => {
+        const { path, ...nodeData } = props;
+        const node = await this.ops.addCanvasNode(path, nodeData as any);
+        return this.text(node);
+      },
+    );
+
+    this.tool(
+      "canvas_update_node",
+      "Update properties of an existing node in a canvas. " +
+        "Provide only the fields you want to change; other properties are preserved. " +
+        "Returns the updated node object. " +
+        "Throws if the canvas file or node does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        nodeId: z.string().describe("Node ID"),
+        x: z.number().optional().describe("New X coordinate"),
+        y: z.number().optional().describe("New Y coordinate"),
+        width: z.number().optional().describe("New width"),
+        height: z.number().optional().describe("New height"),
+        color: z.string().optional().describe("New color"),
+        text: z.string().optional().describe("New text content"),
+        file: z.string().optional().describe("New file reference"),
+        subpath: z.string().optional().describe("New section reference"),
+        url: z.string().optional().describe("New URL"),
+        label: z.string().optional().describe("New label"),
+        background: z.string().optional().describe("New background color"),
+        backgroundStyle: z.string().optional().describe("New background style"),
+      },
+      async (props: {
+        path: string;
+        nodeId: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+        color?: string;
+        text?: string;
+        file?: string;
+        subpath?: string;
+        url?: string;
+        label?: string;
+        background?: string;
+        backgroundStyle?: string;
+      }) => {
+        const { path, nodeId, ...updates } = props;
+        const node = await this.ops.updateCanvasNode(path, nodeId, updates as any);
+        return this.text(node);
+      },
+    );
+
+    this.tool(
+      "canvas_delete_node",
+      "Delete a node from a canvas. " +
+        "Optionally delete all edges connected to this node. " +
+        "Throws if the canvas file or node does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        nodeId: z.string().describe("Node ID"),
+        deleteEdges: z.boolean().optional().describe("Also delete all edges connected to this node (default: false)"),
+      },
+      async ({ path, nodeId, deleteEdges }: { path: string; nodeId: string; deleteEdges?: boolean }) => {
+        await this.ops.deleteCanvasNode(path, nodeId, deleteEdges ?? false);
+        return this.text({ message: "OK" });
+      },
+    );
+
+    this.tool(
+      "canvas_list_edges",
+      "List all edges (connections) in a canvas file. " +
+        "Returns an array of edge objects with their properties. " +
+        "Throws if the canvas file does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+      },
+      async ({ path }: { path: string }) => {
+        const edges = await this.ops.getCanvasEdges(path);
+        return this.text(edges);
+      },
+    );
+
+    this.tool(
+      "canvas_get_edge",
+      "Get a single edge from a canvas by its ID. " +
+        "Returns the edge object with all properties. " +
+        "Throws if the canvas file or edge does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        edgeId: z.string().describe("Edge ID"),
+      },
+      async ({ path, edgeId }: { path: string; edgeId: string }) => {
+        const edge = await this.ops.getCanvasEdge(path, edgeId);
+        return this.text(edge);
+      },
+    );
+
+    this.tool(
+      "canvas_create_edge",
+      "Create a new edge (connection) between two nodes in a canvas and return the created edge with a generated ID. " +
+        "Both fromNode and toNode must exist in the canvas. " +
+        "Throws if the canvas file or either node does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        fromNode: z.string().describe("ID of the source node"),
+        toNode: z.string().describe("ID of the target node"),
+        fromSide: z.enum(["top", "right", "bottom", "left"]).optional().describe("Which side of source node the edge starts from"),
+        toSide: z.enum(["top", "right", "bottom", "left"]).optional().describe("Which side of target node the edge ends at"),
+        fromEnd: z.enum(["none", "arrow"]).optional().describe("Arrow style at source end"),
+        toEnd: z.enum(["none", "arrow"]).optional().describe("Arrow style at target end"),
+        color: z.string().optional().describe("Edge color"),
+        label: z.string().optional().describe("Edge label"),
+      },
+      async (props: {
+        path: string;
+        fromNode: string;
+        toNode: string;
+        fromSide?: "top" | "right" | "bottom" | "left";
+        toSide?: "top" | "right" | "bottom" | "left";
+        fromEnd?: "none" | "arrow";
+        toEnd?: "none" | "arrow";
+        color?: string;
+        label?: string;
+      }) => {
+        const { path, ...edgeData } = props;
+        const edge = await this.ops.addCanvasEdge(path, edgeData as any);
+        return this.text(edge);
+      },
+    );
+
+    this.tool(
+      "canvas_update_edge",
+      "Update properties of an existing edge in a canvas. " +
+        "Provide only the fields you want to change; other properties are preserved. " +
+        "Returns the updated edge object. " +
+        "Throws if the canvas file or edge does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        edgeId: z.string().describe("Edge ID"),
+        fromSide: z.enum(["top", "right", "bottom", "left"]).optional().describe("New source side"),
+        toSide: z.enum(["top", "right", "bottom", "left"]).optional().describe("New target side"),
+        fromEnd: z.enum(["none", "arrow"]).optional().describe("New source arrow style"),
+        toEnd: z.enum(["none", "arrow"]).optional().describe("New target arrow style"),
+        color: z.string().optional().describe("New edge color"),
+        label: z.string().optional().describe("New edge label"),
+      },
+      async (props: {
+        path: string;
+        edgeId: string;
+        fromSide?: "top" | "right" | "bottom" | "left";
+        toSide?: "top" | "right" | "bottom" | "left";
+        fromEnd?: "none" | "arrow";
+        toEnd?: "none" | "arrow";
+        color?: string;
+        label?: string;
+      }) => {
+        const { path, edgeId, ...updates } = props;
+        const edge = await this.ops.updateCanvasEdge(path, edgeId, updates as any);
+        return this.text(edge);
+      },
+    );
+
+    this.tool(
+      "canvas_delete_edge",
+      "Delete an edge from a canvas. " +
+        "Throws if the canvas file or edge does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        edgeId: z.string().describe("Edge ID"),
+      },
+      async ({ path, edgeId }: { path: string; edgeId: string }) => {
+        await this.ops.deleteCanvasEdge(path, edgeId);
+        return this.text({ message: "OK" });
+      },
+    );
+
+    // Canvas Groups (Branch 5)
+
+    this.tool(
+      "canvas_list_groups",
+      "List all group nodes in a canvas. " +
+        "Returns an array of group nodes (type='group'). " +
+        "Throws if the canvas file does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+      },
+      async ({ path }: { path: string }) => {
+        const groups = await this.ops.getCanvasGroups(path);
+        return this.json({ groups });
+      },
+    );
+
+    this.tool(
+      "canvas_get_group",
+      "Get a group node and its spatially contained nodes from a canvas. " +
+        "Returns {group, containedNodes} where group is the group node object " +
+        "and containedNodes is an array of all nodes fully within the group's bounding box. " +
+        "Throws if the canvas file or group does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        groupId: z.string().describe("Group node ID"),
+      },
+      async ({ path, groupId }: { path: string; groupId: string }) => {
+        const result = await this.ops.getCanvasGroup(path, groupId);
+        return this.json(result);
+      },
+    );
+
+    this.tool(
+      "canvas_create_group",
+      "Create a new group node in a canvas. " +
+        "Returns the created group node with a generated ID. " +
+        "Throws if the canvas file does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        x: z.number().describe("X coordinate"),
+        y: z.number().describe("Y coordinate"),
+        width: z.number().describe("Width"),
+        height: z.number().describe("Height"),
+        label: z.string().optional().describe("Group label"),
+        color: z.string().optional().describe("Color"),
+        background: z.string().optional().describe("Background"),
+        backgroundStyle: z.string().optional().describe("Background style"),
+      },
+      async (args: {
+        path: string;
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        label?: string;
+        color?: string;
+        background?: string;
+        backgroundStyle?: string;
+      }) => {
+        const { path, ...groupData } = args;
+        const group = await this.ops.addCanvasGroup(path, groupData);
+        return this.json(group);
+      },
+    );
+
+    this.tool(
+      "canvas_update_group",
+      "Update properties of a group node in a canvas. " +
+        "Returns the updated group node. " +
+        "Throws if the canvas file or group does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        groupId: z.string().describe("Group node ID"),
+        label: z.string().optional().describe("New label"),
+        x: z.number().optional().describe("New X coordinate"),
+        y: z.number().optional().describe("New Y coordinate"),
+        width: z.number().optional().describe("New width"),
+        height: z.number().optional().describe("New height"),
+        color: z.string().optional().describe("New color"),
+        background: z.string().optional().describe("New background"),
+        backgroundStyle: z.string().optional().describe("New background style"),
+      },
+      async (args: {
+        path: string;
+        groupId: string;
+        label?: string;
+        x?: number;
+        y?: number;
+        width?: number;
+        height?: number;
+        color?: string;
+        background?: string;
+        backgroundStyle?: string;
+      }) => {
+        const { path, groupId, ...updates } = args;
+        const group = await this.ops.updateCanvasGroup(path, groupId, updates);
+        return this.json(group);
+      },
+    );
+
+    this.tool(
+      "canvas_delete_group",
+      "Delete a group node from a canvas. " +
+        "Throws if the canvas file or group does not exist.",
+      {
+        path: z.string().describe("Canvas file path relative to vault root"),
+        groupId: z.string().describe("Group node ID"),
+      },
+      async ({ path, groupId }: { path: string; groupId: string }) => {
+        await this.ops.deleteCanvasGroup(path, groupId);
+        return this.text({ message: "OK" });
+      },
+    );
   }
 }

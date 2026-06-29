@@ -153,6 +153,115 @@ std.manifestYamlDoc(
             },
           },
         },
+        CanvasNode: {
+          type: 'object',
+          required: ['id', 'type', 'x', 'y', 'width', 'height'],
+          properties: {
+            id: {
+              type: 'string',
+              description: 'Unique node identifier',
+            },
+            type: {
+              type: 'string',
+              enum: ['text', 'file', 'link', 'group'],
+              description: 'Node type',
+            },
+            x: {
+              type: 'number',
+              description: 'X coordinate',
+            },
+            y: {
+              type: 'number',
+              description: 'Y coordinate',
+            },
+            width: {
+              type: 'number',
+              description: 'Node width',
+            },
+            height: {
+              type: 'number',
+              description: 'Node height',
+            },
+            color: {
+              type: 'string',
+              description: 'Color',
+            },
+            text: {
+              type: 'string',
+              description: 'Text content (for text nodes)',
+            },
+            file: {
+              type: 'string',
+              description: 'File path (for file nodes)',
+            },
+            subpath: {
+              type: 'string',
+              description: 'Subpath like block reference (for file nodes)',
+            },
+            url: {
+              type: 'string',
+              description: 'URL (for link nodes)',
+            },
+            label: {
+              type: 'string',
+              description: 'Label (for group nodes)',
+            },
+            background: {
+              type: 'string',
+              description: 'Background color (for group nodes)',
+            },
+            backgroundStyle: {
+              type: 'string',
+              description: 'Background style (for group nodes)',
+            },
+          },
+        },
+        CanvasEdge: {
+          type: 'object',
+          required: ['id', 'fromNode', 'toNode'],
+          properties: {
+            id: {
+              type: 'string',
+              description: 'Unique edge identifier',
+            },
+            fromNode: {
+              type: 'string',
+              description: 'Source node ID',
+            },
+            toNode: {
+              type: 'string',
+              description: 'Target node ID',
+            },
+            fromSide: {
+              type: 'string',
+              enum: ['top', 'right', 'bottom', 'left'],
+              description: 'Connection side on source node',
+            },
+            toSide: {
+              type: 'string',
+              enum: ['top', 'right', 'bottom', 'left'],
+              description: 'Connection side on target node',
+            },
+            fromEnd: {
+              type: 'string',
+              enum: ['none', 'arrow'],
+              description: 'Connection end style on source',
+            },
+            toEnd: {
+              type: 'string',
+              enum: ['none', 'arrow'],
+              description: 'Connection end style on target',
+            },
+            color: {
+              type: 'string',
+              description: 'Edge color',
+            },
+            label: {
+              type: 'string',
+              description: 'Edge label',
+            },
+          },
+        },
       },
     },
     security: [
@@ -165,6 +274,7 @@ std.manifestYamlDoc(
       { name: 'Active File' },
       { name: 'Periodic Notes' },
       { name: 'Vault Directories' },
+      { name: 'Canvas' },
       { name: 'Search' },
       { name: 'Commands' },
       { name: 'Open' },
@@ -818,6 +928,676 @@ std.manifestYamlDoc(
                   },
                 },
               },
+            },
+          },
+        },
+      },
+      '/canvas/search/': {
+        post: {
+          tags: ['Canvas'],
+          summary: 'Search for text across canvas files.\n',
+          description: importstr 'lib/descriptions/canvas-search.md',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['query'],
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'Text to search for in canvas files',
+                    },
+                    dirPath: {
+                      type: 'string',
+                      description: 'Directory to search in (optional)',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Search results',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      results: {
+                        type: 'array',
+                        items: {
+                          type: 'object',
+                          properties: {
+                            path: {
+                              type: 'string',
+                            },
+                            matches: {
+                              type: 'integer',
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{path}': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get a canvas file or list canvas files in a directory.\n',
+          description: importstr 'lib/descriptions/canvas-list.md',
+          parameters: [ParamPath],
+          responses: {
+            '200': {
+              description: 'Canvas content or directory listing',
+              content: {
+                'application/json': {
+                  schema: {
+                    oneOf: [
+                      {
+                        type: 'object',
+                        properties: {
+                          nodes: {
+                            type: 'array',
+                            description: 'Canvas nodes',
+                          },
+                          edges: {
+                            type: 'array',
+                            description: 'Canvas edges',
+                          },
+                        },
+                      },
+                      {
+                        type: 'object',
+                        properties: {
+                          files: {
+                            type: 'array',
+                            items: {
+                              type: 'string',
+                            },
+                            description: 'Canvas files and directories',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+            '404': {
+              description: 'Canvas file not found',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: ['Canvas'],
+          summary: 'Create or overwrite a canvas file.\n',
+          description: importstr 'lib/descriptions/canvas-put.md',
+          parameters: [ParamPath],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['nodes', 'edges'],
+                  properties: {
+                    nodes: {
+                      type: 'array',
+                      description: 'Array of canvas nodes',
+                    },
+                    edges: {
+                      type: 'array',
+                      description: 'Array of canvas edges',
+                    },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Canvas created or updated',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                  },
+                },
+              },
+            },
+            '400': {
+              description: 'Invalid canvas data',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: ['Canvas'],
+          summary: 'Delete a canvas file.\n',
+          description: importstr 'lib/descriptions/canvas-delete.md',
+          parameters: [ParamPath],
+          responses: {
+            '204': {
+              description: 'Canvas deleted',
+            },
+            '404': {
+              description: 'Canvas file not found',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{path}/stats': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get statistics for a canvas file.\n',
+          description: importstr 'lib/descriptions/canvas-stats.md',
+          parameters: [ParamPath],
+          responses: {
+            '200': {
+              description: 'Canvas statistics',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      nodeCount: {
+                        type: 'number',
+                        description: 'Total number of nodes',
+                      },
+                      nodeCountByType: {
+                        type: 'object',
+                        description: 'Count of nodes by type (text, file, link, group)',
+                        additionalProperties: {
+                          type: 'number',
+                        },
+                      },
+                      edgeCount: {
+                        type: 'number',
+                        description: 'Total number of edges',
+                      },
+                      boundingBox: {
+                        type: 'object',
+                        description: 'Bounding box of all nodes',
+                        properties: {
+                          minX: {
+                            type: 'number',
+                          },
+                          minY: {
+                            type: 'number',
+                          },
+                          maxX: {
+                            type: 'number',
+                          },
+                          maxY: {
+                            type: 'number',
+                          },
+                          width: {
+                            type: 'number',
+                          },
+                          height: {
+                            type: 'number',
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            '404': {
+              description: 'Canvas file not found',
+              content: {
+                'application/json': {
+                  schema: {
+                    '$ref': '#/components/schemas/Error',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{canvasPath}/nodes': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'List nodes in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-nodes-list.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'type',
+              'in': 'query',
+              description: 'Filter by node type (text, file, link, group)',
+              required: false,
+              schema: {
+                type: 'string',
+              },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'List of nodes',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      nodes: {
+                        type: 'array',
+                        items: { '$ref': '#/components/schemas/CanvasNode' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Canvas'],
+          summary: 'Create a new node in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-node-post.md',
+          parameters: [ParamPath],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { '$ref': '#/components/schemas/CanvasNode' },
+              },
+            },
+          },
+          responses: {
+            '201': {
+              description: 'Node created',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasNode' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{canvasPath}/nodes/{nodeId}': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get a node from a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-node-get.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'nodeId',
+              'in': 'path',
+              description: 'Node ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Node',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasNode' },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: ['Canvas'],
+          summary: 'Update a node in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-node-put.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'nodeId',
+              'in': 'path',
+              description: 'Node ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { '$ref': '#/components/schemas/CanvasNode' },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Node updated',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasNode' },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: ['Canvas'],
+          summary: 'Delete a node from a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-node-delete.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'nodeId',
+              'in': 'path',
+              description: 'Node ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+            {
+              name: 'deleteEdges',
+              'in': 'query',
+              description: 'If true, also delete edges connected to this node',
+              required: false,
+              schema: { type: 'boolean' },
+            },
+          ],
+          responses: {
+            '204': {
+              description: 'Node deleted',
+            },
+          },
+        },
+      },
+      '/canvas/{canvasPath}/edges': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'List edges in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-edges-list.md',
+          parameters: [ParamPath],
+          responses: {
+            '200': {
+              description: 'List of edges',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      edges: {
+                        type: 'array',
+                        items: { '$ref': '#/components/schemas/CanvasEdge' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Canvas'],
+          summary: 'Create a new edge in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-edge-post.md',
+          parameters: [ParamPath],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { '$ref': '#/components/schemas/CanvasEdge' },
+              },
+            },
+          },
+          responses: {
+            '201': {
+              description: 'Edge created',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasEdge' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{canvasPath}/edges/{edgeId}': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get an edge from a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-edge-get.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'edgeId',
+              'in': 'path',
+              description: 'Edge ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Edge',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasEdge' },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: ['Canvas'],
+          summary: 'Update an edge in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-edge-put.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'edgeId',
+              'in': 'path',
+              description: 'Edge ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { '$ref': '#/components/schemas/CanvasEdge' },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Edge updated',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasEdge' },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: ['Canvas'],
+          summary: 'Delete an edge from a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-edge-delete.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'edgeId',
+              'in': 'path',
+              description: 'Edge ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '204': {
+              description: 'Edge deleted',
+            },
+          },
+        },
+      },
+      '/canvas/{canvasPath}/groups': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'List group nodes in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-groups-list.md',
+          parameters: [ParamPath],
+          responses: {
+            '200': {
+              description: 'List of groups',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      groups: {
+                        type: 'array',
+                        items: { '$ref': '#/components/schemas/CanvasNode' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: ['Canvas'],
+          summary: 'Create a new group node in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-group-post.md',
+          parameters: [ParamPath],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { '$ref': '#/components/schemas/CanvasNode' },
+              },
+            },
+          },
+          responses: {
+            '201': {
+              description: 'Group created',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasNode' },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/canvas/{canvasPath}/groups/{groupId}': {
+        get: {
+          tags: ['Canvas'],
+          summary: 'Get a group and its contained nodes.\n',
+          description: importstr 'lib/descriptions/canvas-group-get.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'groupId',
+              'in': 'path',
+              description: 'Group ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '200': {
+              description: 'Group and contained nodes',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      group: { '$ref': '#/components/schemas/CanvasNode' },
+                      containedNodes: {
+                        type: 'array',
+                        items: { '$ref': '#/components/schemas/CanvasNode' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: ['Canvas'],
+          summary: 'Update a group node in a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-group-put.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'groupId',
+              'in': 'path',
+              description: 'Group ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { '$ref': '#/components/schemas/CanvasNode' },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Group updated',
+              content: {
+                'application/json': {
+                  schema: { '$ref': '#/components/schemas/CanvasNode' },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: ['Canvas'],
+          summary: 'Delete a group node from a canvas.\n',
+          description: importstr 'lib/descriptions/canvas-group-delete.md',
+          parameters: [
+            ParamPath,
+            {
+              name: 'groupId',
+              'in': 'path',
+              description: 'Group ID',
+              required: true,
+              schema: { type: 'string' },
+            },
+          ],
+          responses: {
+            '204': {
+              description: 'Group deleted',
             },
           },
         },

@@ -1,0 +1,1 @@
+Read a canvas file and return its JSON structure. Returns an object with `nodes` array (each node has id, type, x, y, width, height, and optional properties) and `edges` array (each edge has id, fromNode, toNode, and optional properties).
