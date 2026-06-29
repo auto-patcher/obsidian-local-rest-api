@@ -13,6 +13,7 @@ Access your vault through the **REST API** or the **built-in [MCP server](https:
 - **Search your vault** — simple full-text search or structured [JsonLogic](https://jsonlogic.com/) queries against note metadata (frontmatter, tags, path, content)
 - **Access the active file** — read or write whatever note is currently open in Obsidian
 - **Work with periodic notes** — get or create daily, weekly, monthly, quarterly, and yearly notes
+- **Manage canvases** — read, write, delete canvas files, and manipulate nodes, edges, and groups within canvases
 - **List and execute commands** — trigger any Obsidian command as if you'd used the command palette
 - **Query tags** — list all tags across your vault with usage counts
 - **Open files in Obsidian** — tell Obsidian to open a specific note in its UI
