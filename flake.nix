@@ -50,14 +50,15 @@
           ];
 
           buildPhase = ''
-            set -x
-            rm -rf ~/.npm
             echo "=== Installing dependencies ==="
-            npm ci --prefer-offline --no-audit
+            npm ci --ignore-scripts
+
             echo "=== Building main ==="
             npm run build
+
             echo "=== Building docs ==="
             npm run build-docs
+
             echo "=== Build complete ==="
           '';
 
