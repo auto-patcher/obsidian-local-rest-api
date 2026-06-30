@@ -48,6 +48,7 @@
           ];
 
           buildPhase = ''
+            rm -rf ~/.npm
             npm ci
             npm run typecheck
             npm run build
