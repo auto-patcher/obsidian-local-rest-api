@@ -22,7 +22,7 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        node = pkgs.nodejs_20;
+        node = pkgs.nodejs_22;
       in
       {
         devShells.default = pkgs.mkShell {
