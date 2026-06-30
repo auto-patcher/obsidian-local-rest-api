@@ -29,6 +29,7 @@
           buildInputs = [
             node
             pkgs.git
+            pkgs.jsonnet
           ];
 
           shellHook = ''
@@ -45,14 +46,19 @@
           buildInputs = [
             node
             pkgs.git
+            pkgs.jsonnet
           ];
 
           buildPhase = ''
+            set -x
             rm -rf ~/.npm
-            npm ci
-            npm run typecheck
+            echo "=== Installing dependencies ==="
+            npm ci --prefer-offline --no-audit
+            echo "=== Building main ==="
             npm run build
+            echo "=== Building docs ==="
             npm run build-docs
+            echo "=== Build complete ==="
           '';
 
           installPhase = ''
