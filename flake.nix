@@ -23,22 +23,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
         bun = pkgs.bun;
-      in
-      {
-        devShells.default = pkgs.mkShell {
-          buildInputs = [
-            bun
-            pkgs.git
-            pkgs.jsonnet
-          ];
-
-          shellHook = ''
-            echo "Obsidian Local REST API dev environment loaded"
-            echo "Bun version: $(bun --version)"
-          '';
-        };
-
-        packages.buildEnv = pkgs.stdenv.mkDerivation {
+        buildEnvPkg = pkgs.stdenv.mkDerivation {
           name = "obsidian-local-rest-api";
           src = ./.;
 
@@ -79,8 +64,23 @@
             platforms = pkgs.lib.platforms.all;
           };
         };
+      in
+      {
+        devShells.default = pkgs.mkShell {
+          buildInputs = [
+            bun
+            pkgs.git
+            pkgs.jsonnet
+          ];
 
-        packages.default = packages.buildEnv;
+          shellHook = ''
+            echo "Obsidian Local REST API dev environment loaded"
+            echo "Bun version: $(bun --version)"
+          '';
+        };
+
+        packages.buildEnv = buildEnvPkg;
+        packages.default = buildEnvPkg;
 
         formatter = pkgs.nixfmt;
       }
