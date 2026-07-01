@@ -48,7 +48,11 @@
             pkgs.jsonnet
           ];
 
+          # Disable sandbox to allow network access for Bun to fetch packages
+          sandbox = false;
+
           buildPhase = ''
+            set -x
             bun install --frozen-lockfile
             bun run typecheck
             bun run build
