@@ -50,16 +50,10 @@
           ];
 
           buildPhase = ''
-            echo "=== Installing dependencies ==="
-            npm ci --ignore-scripts
-
-            echo "=== Building main ==="
+            npm ci
+            npm run typecheck
             npm run build
-
-            echo "=== Building docs ==="
             npm run build-docs
-
-            echo "=== Build complete ==="
           '';
 
           installPhase = ''
