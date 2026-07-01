@@ -22,20 +22,19 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
-        node = pkgs.nodejs_22;
+        bun = pkgs.bun;
       in
       {
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            node
+            bun
             pkgs.git
             pkgs.jsonnet
           ];
 
           shellHook = ''
             echo "Obsidian Local REST API dev environment loaded"
-            echo "Node.js version: $(node --version)"
-            echo "npm version: $(npm --version)"
+            echo "Bun version: $(bun --version)"
           '';
         };
 
@@ -44,16 +43,16 @@
           src = ./.;
 
           buildInputs = [
-            node
+            bun
             pkgs.git
             pkgs.jsonnet
           ];
 
           buildPhase = ''
-            npm ci
-            npm run typecheck
-            npm run build
-            npm run build-docs
+            bun install --frozen-lockfile
+            bun run typecheck
+            bun run build
+            bun run build-docs
           '';
 
           installPhase = ''
