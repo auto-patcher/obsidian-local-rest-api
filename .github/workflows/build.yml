@@ -1,0 +1,33 @@
+name: Build on Main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v10
+
+      - name: Build with Bun
+        run: nix build .#buildEnv --impure
+
+      - name: Package artifacts
+        run: |
+          mkdir -p artifacts
+          cp ./result/lib/main.js artifacts/
+          cp ./result/lib/manifest.json artifacts/
+          cp ./result/lib/main.css artifacts/ 2>/dev/null || true
+          cp ./result/docs/openapi.yaml artifacts/ 2>/dev/null || true
+          cd artifacts && tar -czf ../obsidian-local-rest-api.tar.gz .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-local-rest-api
+          path: obsidian-local-rest-api.tar.gz

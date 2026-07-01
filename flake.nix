@@ -38,7 +38,7 @@
           '';
         };
 
-        packages.default = pkgs.stdenv.mkDerivation {
+        packages.buildEnv = pkgs.stdenv.mkDerivation {
           name = "obsidian-local-rest-api";
           src = ./.;
 
@@ -79,6 +79,8 @@
             platforms = pkgs.lib.platforms.all;
           };
         };
+
+        packages.default = packages.buildEnv;
 
         formatter = pkgs.nixfmt;
       }
