@@ -1,47 +1,65 @@
-name: Release Obsidian Plugin
+name: Release
+
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      id-token: write
-      attestations: write
+    outputs:
+      artifact-name: ${{ steps.build.outputs.artifact }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Nix with Cachix
+        uses: cachix/install-nix-action@v27
         with:
-          fetch-depth: 0
-          fetch-tags: true
+          nix_path: nixpkgs=channel:nixos-unstable
+          extra_nix_config: |
+            trusted-users = root runner
 
-      - name: Fetch annotated tag objects
-        run: git fetch --tags --force
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20.x'
-
-      - name: Build
+      - name: Build with Bun
+        id: build
         run: |
-          npm install
-          npm run build --if-present
+          nix develop --command bash -c '
+            set -e
+            bun install --frozen-lockfile
+            bun run typecheck
+            bun run build
+            bun run build-docs
+          '
+          mkdir -p artifacts
+          cp main.js artifacts/ 2>/dev/null || true
+          cp manifest.json artifacts/ 2>/dev/null || true
+          cp main.css artifacts/ 2>/dev/null || true
+          cp docs/openapi.yaml artifacts/ 2>/dev/null || true
+          cd artifacts && tar -czf ../obsidian-local-rest-api-${GITHUB_REF#refs/tags/}.tar.gz .
+          echo "artifact=obsidian-local-rest-api-${GITHUB_REF#refs/tags/}.tar.gz" >> $GITHUB_OUTPUT
 
-      - name: Attest build artifacts
-        uses: actions/attest-build-provenance@v2
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          subject-path: |
-            main.js
-            manifest.json
-            styles.css
+          name: release-artifact
+          path: obsidian-local-rest-api-*.tar.gz
 
-      - name: Create release
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-artifact
+
+      - name: Create Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --notes "$(git tag -l --format='%(contents:body)' '${{ github.ref_name }}')" \
-            main.js manifest.json styles.css
+            --repo "${{ github.repository }}" \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            obsidian-local-rest-api-*.tar.gz
